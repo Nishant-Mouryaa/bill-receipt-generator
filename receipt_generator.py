@@ -10,9 +10,12 @@ from reportlab.platypus import (
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT
 
+from currency import get_symbol, CURRENCIES
+
 OUTPUT_DIR = "receipts"
 
-def generate_receipt(bill_no, customer_name, items, tax_rate=0.0):
+
+def generate_receipt(bill_no, customer_name, items, tax_rate=0.0, currency="USD"):
     """
     Generate a PDF receipt.
 
@@ -21,13 +24,17 @@ def generate_receipt(bill_no, customer_name, items, tax_rate=0.0):
         customer_name (str)   : Customer's name
         items         (list)  : List of dicts {name, qty, price}
         tax_rate      (float) : Tax percentage (e.g., 0.1 for 10%)
+        currency      (str)   : Currency code (e.g., 'USD', 'EUR')
 
     Returns:
-        str: Path to the generated PDF file
+        tuple: (file_path, grand_total, items_with_subtotals)
     """
     os.makedirs(OUTPUT_DIR, exist_ok=True)
     date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     file_path = os.path.join(OUTPUT_DIR, f"receipt_{bill_no}.pdf")
+    
+    symbol = get_symbol(currency)
+    currency_name = CURRENCIES.get(currency, CURRENCIES["USD"])["name"]
 
     doc = SimpleDocTemplate(
         file_path,
@@ -60,7 +67,8 @@ def generate_receipt(bill_no, customer_name, items, tax_rate=0.0):
     # ── Bill Info ────────────────────────────────────────────
     info_data = [
         ["Bill No:", bill_no,      "Date:",     date_str],
-        ["Customer:", customer_name, "Status:",  "✅ PAID"],
+        ["Customer:", customer_name, "Currency:", f"{currency} ({symbol})"],
+        ["Status:", "✅ PAID", "", ""],
     ]
     info_table = Table(info_data, colWidths=[3 * cm, 6 * cm, 3 * cm, 5 * cm])
     info_table.setStyle(TableStyle([
@@ -76,7 +84,7 @@ def generate_receipt(bill_no, customer_name, items, tax_rate=0.0):
     elements.append(Spacer(1, 0.5 * cm))
 
     # ── Items Table ──────────────────────────────────────────
-    table_data = [["#", "Item Name", "Qty", "Unit Price", "Subtotal"]]
+    table_data = [["#", "Item Name", "Qty", f"Unit Price ({symbol})", f"Subtotal ({symbol})"]]
     subtotal_total = 0.0
 
     for i, item in enumerate(items, start=1):
@@ -87,18 +95,18 @@ def generate_receipt(bill_no, customer_name, items, tax_rate=0.0):
             str(i),
             item["name"],
             str(item["qty"]),
-            f"${item['price']:.2f}",
-            f"${subtotal:.2f}"
+            f"{symbol}{item['price']:.2f}",
+            f"{symbol}{subtotal:.2f}"
         ])
 
     tax_amount = subtotal_total * tax_rate
     grand_total = subtotal_total + tax_amount
 
     # Totals rows
-    table_data.append(["", "", "", "Subtotal:", f"${subtotal_total:.2f}"])
+    table_data.append(["", "", "", "Subtotal:", f"{symbol}{subtotal_total:.2f}"])
     if tax_rate > 0:
-        table_data.append(["", "", "", f"Tax ({tax_rate*100:.0f}%):", f"${tax_amount:.2f}"])
-    table_data.append(["", "", "", "TOTAL:", f"${grand_total:.2f}"])
+        table_data.append(["", "", "", f"Tax ({tax_rate*100:.0f}%):", f"{symbol}{tax_amount:.2f}"])
+    table_data.append(["", "", "", "TOTAL:", f"{symbol}{grand_total:.2f}"])
 
     item_table = Table(
         table_data,
